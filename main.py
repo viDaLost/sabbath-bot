@@ -1,109 +1,102 @@
-import json
-import datetime
 import asyncio
+import json
+import logging
+import os
+from datetime import datetime, timedelta
+
+import pytz
 import requests
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
+# Путь к конфигу
+CONFIG_FILE = "config.json"
+
+# ID администратора (твоё)
+ADMIN_ID = 1288379477
 
 # Загрузка конфигурации
-with open("config.json", "r") as f:
-    cfg = json.load(f)
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "chat_id": -1002773838097,
+        "day": "Friday",
+        "time": "10:00"
+    }
 
-ADMIN_ID = cfg["admin_id"]
-CHAT_ID = cfg["chat_id"]
+# Сохранение конфигурации
+def save_config(config):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=4)
 
-def save_cfg():
-    with open("config.json", "w") as f:
-        json.dump(cfg, f, indent=2)
+# Получить время захода солнца и вычесть 1 час
+def get_sunset_time():
+    # Координаты (Москва)
+    lat = 55.751244
+    lng = 37.618423
+    response = requests.get(
+        f"https://api.sunrise-sunset.org/json?lat={lat}&lng={lng}&formatted=0"
+    )
+    data = response.json()
+    sunset_utc = datetime.fromisoformat(data["results"]["sunset"])
+    moscow_tz = pytz.timezone("Europe/Moscow")
+    sunset_moscow = sunset_utc.astimezone(moscow_tz)
+    adjusted_time = sunset_moscow - timedelta(hours=1)
+    return adjusted_time.strftime("%H:%M")
 
-def get_sunset_minus_hour():
-    url = f"https://api.sunrise-sunset.org/json?lat={cfg['lat']}&lng={cfg['lon']}&formatted=0"
-    r = requests.get(url).json()
-    utc = datetime.datetime.fromisoformat(r["results"]["sunset"][:-1])
-    return (utc + datetime.timedelta(hours=3) - datetime.timedelta(hours=1))
+# Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Бот запущен. Используйте /set для изменения настроек.")
 
-async def send_msg(app):
-    sunset = get_sunset_minus_hour().strftime("%H:%M")
-    text = f"Сегодня встреча, суббота в {sunset}"
-    await app.bot.send_message(CHAT_ID, text)
-
-async def scheduler(app):
-    while True:
-        now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=3)  # МСК
-        if now.weekday() == cfg["weekday"] and now.hour == cfg["hour"] and now.minute == cfg["minute"]:
-            await send_msg(app)
-            await asyncio.sleep(60)
-        await asyncio.sleep(5)
-
-async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == ADMIN_ID:
-        await update.message.reply_text(
-            "Команды администратора:\n"
-            "/setday <0-6> — день недели (0=Пн … 6=Вс)\n"
-            "/settime <ЧЧ:ММ> — время по МСК\n"
-            "/setloc <lat> <lon> — координаты\n"
-            "/test — тестовая отправка"
-        )
-
-async def setday(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# Команда /set
+async def set_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав.")
         return
-    try:
-        d = int(ctx.args[0])
-        if 0 <= d <= 6:
-            cfg["weekday"] = d
-            save_cfg()
-            await update.message.reply_text(f"День недели обновлён: {d}")
-        else:
-            raise ValueError
-    except:
-        await update.message.reply_text("Ошибка. Формат: /setday 4")
 
-async def settime(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if len(args) != 2:
+        await update.message.reply_text("Формат: /set <день> <время>, пример: /set Friday 10:00")
+        return
+
+    day, time = args
+    config = load_config()
+    config["day"] = day
+    config["time"] = time
+    save_config(config)
+    await update.message.reply_text(f"Настройки обновлены: {day} в {time}")
+
+# Команда /test
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав.")
         return
-    try:
-        h, m = map(int, ctx.args[0].split(":"))
-        if 0 <= h < 24 and 0 <= m < 60:
-            cfg["hour"], cfg["minute"] = h, m
-            save_cfg()
-            await update.message.reply_text(f"Время установлено: {h:02}:{m:02} МСК")
-        else:
-            raise ValueError
-    except:
-        await update.message.reply_text("Ошибка. Формат: /settime 10:00")
 
-async def setloc(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    try:
-        lat, lon = map(float, ctx.args)
-        cfg["lat"], cfg["lon"] = lat, lon
-        save_cfg()
-        await update.message.reply_text(f"Координаты обновлены: {lat}, {lon}")
-    except:
-        await update.message.reply_text("Ошибка. Формат: /setloc 55.75 37.61")
+    config = load_config()
+    sunset_time = get_sunset_time()
+    message = f"Сегодня встреча — суббота в {sunset_time}"
+    await context.bot.send_message(chat_id=config["chat_id"], text=message)
+    await update.message.reply_text("Тестовое сообщение отправлено.")
 
-async def test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    try:
-        sunset = get_sunset_minus_hour().strftime("%H:%M")
-        text = f"✅ ТЕСТ: Сегодня встреча, суббота в {sunset}"
-        await ctx.bot.send_message(chat_id=CHAT_ID, text=text)
-        await update.message.reply_text("Тестовое сообщение отправлено в канал.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка при отправке: {e}")
-
+# Основной запуск
 async def main():
-    app = Application.builder().token(cfg["bot_token"]).build()
+    logging.basicConfig(level=logging.INFO)
+    config = load_config()
+    TOKEN = os.getenv("BOT_TOKEN") or "7209287971:AAEUlDxd-0XwMzxpecpk8BvfhlrGkLbIqrw"
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("setday", setday))
-    app.add_handler(CommandHandler("settime", settime))
-    app.add_handler(CommandHandler("setloc", setloc))
-    app.add_handler(CommandHandler("test", test))
-    asyncio.create_task(scheduler(app))
+    app.add_handler(CommandHandler("set", set_config))
+    app.add_handler(CommandHandler("test", test_command))
+
     await app.run_polling()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Для Render
+if __name__ == '__main__':
+    try:
+        asyncio.get_event_loop().run_until_complete(main())
+    except RuntimeError as e:
+        print(f"Runtime error: {e}")
