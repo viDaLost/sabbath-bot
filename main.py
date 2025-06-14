@@ -69,7 +69,7 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     config = load_config()
     sunset_time = get_sunset_time()
-    message = f"Сегодня встреча — суббота в {sunset_time}"
+    message = f"ⲥⲉⲅⲟⲇⲏя ⲃⲥⲧⲣⲉⳡⲁ ⲥⲩⳝⳝⲟⲧы ⲃ  {sunset_time}"
     await context.bot.send_message(chat_id=config["chat_id"], text=message)
     await update.message.reply_text("Тестовое сообщение отправлено.")
 
