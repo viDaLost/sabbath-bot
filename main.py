@@ -33,7 +33,8 @@ def save_settings(settings):
         json.dump(settings, f)
 
 def get_sunset_time():
-    url = "https://api.sunrise-sunset.org/json?lat=55.7558&lng=37.6173&formatted=0"
+    # Координаты Ставропольского края
+    url = "https://api.sunrise-sunset.org/json?lat=45.0428&lng=41.9734&formatted=0"
     response = requests.get(url)
     data = response.json()
     sunset_utc = datetime.fromisoformat(data["results"]["sunset"])
@@ -83,13 +84,15 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     sunset_moscow, adjusted_time = get_sunset_time()
-    await update.message.reply_text(
+    message = (
         f"🔍 Проверка уведомления\n"
         f"☀ Заход солнца по МСК: {sunset_moscow.strftime('%H:%M')}\n"
         f"📌 Время встречи (минус 1 час): {adjusted_time.strftime('%H:%M')}"
     )
 
-# Главная функция — НЕ запускаем event loop вручную
+    await update.message.reply_text(message)  # Личное сообщение админу
+    await context.bot.send_message(chat_id=CHANNEL_ID, text=message)  # В канал
+
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -97,7 +100,6 @@ def main():
     app.add_handler(CommandHandler("set", set_config))
     app.add_handler(CommandHandler("test", test_command))
 
-    # Удаляем вебхук и запускаем бота
     async def on_startup(app: Application):
         await app.bot.delete_webhook(drop_pending_updates=True)
         asyncio.create_task(scheduler(app))
