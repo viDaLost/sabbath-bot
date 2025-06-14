@@ -12,7 +12,7 @@ from telegram.ext import (
 )
 import asyncio
 
-TOKEN = os.getenv("BOT_TOKEN") or "your-bot-token"
+TOKEN = os.getenv("BOT_TOKEN") or "7209287971:AAEUlDxd-0XwMzxpecpk8BvfhlrGkLbIqrw"
 CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1002773838097"
 ADMIN_ID = int(os.getenv("ADMIN_ID") or "1288379477")
 SETTINGS_FILE = "settings.json"
