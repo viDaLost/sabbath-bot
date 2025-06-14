@@ -8,10 +8,11 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
+    Application,
 )
 import asyncio
 
-TOKEN = os.getenv("BOT_TOKEN") or "7209287971:AAEUlDxd-0XwMzxpecpk8BvfhlrGkLbIqrw"
+TOKEN = os.getenv("BOT_TOKEN") or "your-bot-token"
 CHANNEL_ID = os.getenv("CHANNEL_ID") or "-1002773838097"
 ADMIN_ID = int(os.getenv("ADMIN_ID") or "1288379477")
 SETTINGS_FILE = "settings.json"
@@ -41,12 +42,12 @@ def get_sunset_time():
     adjusted_time = sunset_moscow - timedelta(hours=1)
     return sunset_moscow, adjusted_time
 
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+async def send_reminder(app: Application):
     _, adjusted_time = get_sunset_time()
-    message = f"🕊️Сⲉⲅⲟⲇⲏя ⲃⲥⲧⲣⲉⳡⲁ ⲥⲩⳝⳝⲟⲧы ⲃ ❗️ {adjusted_time.strftime('%H:%M')} ❗️ "
-    await context.bot.send_message(chat_id=CHANNEL_ID, text=message)
+    message = f"🕊️Сⲉⲅⲟⲇⲏя ⲃⲥⲧⲣⲉⳡⲁ ⲥⲩⳝⳝⲟⲧы ⲃ ❗️ {adjusted_time.strftime('%H:%M')} ❗️"
+    await app.bot.send_message(chat_id=CHANNEL_ID, text=message)
 
-async def scheduler(app):
+async def scheduler(app: Application):
     while True:
         now = datetime.now(pytz.timezone("Europe/Moscow"))
         settings = load_settings()
@@ -54,7 +55,7 @@ async def scheduler(app):
         if weekday == settings["day"]:
             target_time = datetime.strptime(settings["time"], "%H:%M").time()
             if now.time().hour == target_time.hour and now.time().minute == target_time.minute:
-                await send_reminder(app.bot)
+                await send_reminder(app)
                 await asyncio.sleep(60)
         await asyncio.sleep(30)
 
@@ -88,20 +89,22 @@ async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📌 Время встречи (минус 1 час): {adjusted_time.strftime('%H:%M')}"
     )
 
-async def main():
+# Главная функция — НЕ запускаем event loop вручную
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("set", set_config))
     app.add_handler(CommandHandler("test", test_command))
 
-    # Удаляем возможный webhook
-    await app.bot.delete_webhook(drop_pending_updates=True)
+    # Удаляем вебхук и запускаем бота
+    async def on_startup(app: Application):
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        asyncio.create_task(scheduler(app))
 
-    # Запускаем планировщик
-    asyncio.create_task(scheduler(app))
+    app.post_init = on_startup
 
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
